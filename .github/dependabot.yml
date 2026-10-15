@@ -1,10 +1,7 @@
 version: 2
 updates:
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-
+  # No "docker" ecosystem: the FROM line belongs to upstream and arrives through the weekly
+  # upstream merge (sync-upstream.sh). A Dependabot edit to it would only cause merge conflicts.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
