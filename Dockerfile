@@ -116,6 +116,7 @@ RUN \
   grep -l /usr/share/code/code /usr/share/applications/*.desktop | xargs sed -i \
     's#/usr/share/code/code#/usr/local/bin/wrapped-code#g' && \
   echo "**** fork: drop what this desktop never uses ****" && \
+  echo "**** (and the legacy i965 VA-API driver: init-video forces it whenever it loads, iHD encodes faster and sharper) ****" && \
   echo "**** (keep the base's python/perl: selkies' venv uses system site-packages, which rpm can't see) ****" && \
   rpm -qa --qf '%{NAME}\n' | grep -E '^(python3|perl)' | xargs dnf mark -y user && \
   dnf install -y --setopt=install_weak_deps=False \
@@ -132,6 +133,7 @@ RUN \
     gcc-c++ \
     glibc-all-langpacks \
     kwrite \
+    libva-intel-driver \
     moby-engine \
     papirus-icon-theme \
     plasma-discover \

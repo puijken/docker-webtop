@@ -36,7 +36,11 @@ Removed from the base, because a desktop never uses them:
   privileged container anyway;
 - the compilers and build tools (`gcc`, `gcc-c++`, `cmake`, Rust);
 - `glibc-all-langpacks` (replaced by `en` + `nl`);
-- translations other than en/nl, the browsers' other language packs, and `/usr/share/doc`.
+- translations other than en/nl, the browsers' other language packs, and `/usr/share/doc`;
+- `libva-intel-driver`, the legacy i965 VA-API driver. linuxserver's `init-video` sets
+  `LIBVA_DRIVER_NAME=i965` whenever that driver loads. Without it, libva uses `iHD`
+  (`intel-media-driver`, from the base), which encoded about twice as fast and gave sharper text
+  on a UHD 630.
 
 The base's `python3-*` and `perl-*` packages are marked as user-installed first, so the removal
 can't take them as "unused dependencies". Selkies' venv uses system site-packages, which rpm
