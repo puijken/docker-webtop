@@ -1,4 +1,4 @@
-FROM ghcr.io/linuxserver/baseimage-selkies:fedora44
+FROM ghcr.io/linuxserver/baseimage-selkies:fedora44 AS build
 
 # set version label
 ARG BUILD_DATE
@@ -20,7 +20,6 @@ RUN \
     aurorae \
     breeze-icon-theme \
     cargo \
-    chromium \
     dolphin \
     kde-gtk-config \
     kde-settings-pulseaudio \
@@ -30,13 +29,9 @@ RUN \
     kmenuedit \
     konsole5 \
     kvantum \
-    kwrite \
-    papirus-icon-theme \
     pipewire \
     plasma-breeze \
     plasma-desktop \
-    plasma-discover \
-    plasma-discover-packagekit \
     plasma-systemmonitor \
     plasma-workspace-xorg \
     qt5-qtscript \
@@ -52,9 +47,6 @@ RUN \
     /config/.cargo/bin/wl-* \
     /usr/bin/ && \
   echo "**** application tweaks ****" && \
-  sed -i \
-    's#^Exec=.*#Exec=/usr/local/bin/wrapped-chromium#g' \
-    /usr/share/applications/chromium-browser.desktop && \
   setcap -r \
     /usr/sbin/kwin_wayland && \
   ln -s \
@@ -85,3 +77,95 @@ COPY --from=ghcr.io/linuxserver/selkies-layers:amd64-fedora44-kwin / /
 # ports and volumes
 EXPOSE 3001
 VOLUME /config
+
+# ---- fork: apps, trim, flatten (see FORK.md) ----
+RUN \
+  echo "**** fork: vendor repos ****" && \
+  rpm --import https://packages.microsoft.com/keys/microsoft.asc && \
+  rpm --import https://dl.google.com/linux/linux_signing_key.pub && \
+  printf '[vscode]\nname=VS Code\nbaseurl=https://packages.microsoft.com/yumrepos/vscode\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc\n' \
+    > /etc/yum.repos.d/vscode.repo && \
+  printf '[microsoft-edge]\nname=Microsoft Edge\nbaseurl=https://packages.microsoft.com/yumrepos/edge\nenabled=1\ngpgcheck=1\ngpgkey=https://packages.microsoft.com/keys/microsoft.asc\n' \
+    > /etc/yum.repos.d/microsoft-edge.repo && \
+  printf '[google-chrome]\nname=Google Chrome\nbaseurl=https://dl.google.com/linux/chrome/rpm/stable/x86_64\nenabled=1\ngpgcheck=1\ngpgkey=https://dl.google.com/linux/linux_signing_key.pub\n' \
+    > /etc/yum.repos.d/google-chrome.repo && \
+  echo "**** fork: apps (ffmpeg-libs from RPM Fusion: Fedora's own ffmpeg lacks H.264/HEVC) ****" && \
+  dnf install -y --setopt=install_weak_deps=False --best --allowerasing \
+    code \
+    doublecmd-qt6 \
+    ffmpeg-libs \
+    google-chrome-stable \
+    microsoft-edge-stable \
+    mpv \
+    qimgv && \
+  echo "**** fork: launchers through the --no-sandbox wrappers ****" && \
+  grep -l /usr/bin/google-chrome-stable /usr/share/applications/*.desktop | xargs sed -i \
+    's#/usr/bin/google-chrome-stable#/usr/local/bin/wrapped-chrome#g' && \
+  grep -l /usr/bin/microsoft-edge-stable /usr/share/applications/*.desktop | xargs sed -i \
+    's#/usr/bin/microsoft-edge-stable#/usr/local/bin/wrapped-edge#g' && \
+  grep -l /usr/share/code/code /usr/share/applications/*.desktop | xargs sed -i \
+    's#/usr/share/code/code#/usr/local/bin/wrapped-code#g' && \
+  echo "**** fork: drop what this desktop never uses ****" && \
+  echo "**** (keep the base's python/perl: selkies' venv uses system site-packages, which rpm can't see) ****" && \
+  rpm -qa --qf '%{NAME}\n' | grep -E '^(python3|perl)' | xargs dnf mark -y user && \
+  dnf install -y --setopt=install_weak_deps=False \
+    glibc-langpack-en \
+    glibc-langpack-nl && \
+  dnf remove -y \
+    cargo \
+    cmake \
+    containerd \
+    docker-cli \
+    docker-compose \
+    gcc \
+    gcc-c++ \
+    glibc-all-langpacks \
+    moby-engine \
+    runc && \
+  dnf autoremove -y && \
+  find /usr/share/locale -mindepth 1 -maxdepth 1 \
+    ! -name 'en*' ! -name 'nl*' ! -name locale.alias -exec rm -rf {} + && \
+  find /opt/google/chrome/locales /opt/microsoft/msedge/locales -name '*.pak' \
+    ! -name 'en-US*' ! -name 'en-GB*' ! -name 'nl*' -delete && \
+  rm -rf /usr/share/doc/* && \
+  dnf clean all && \
+  rm -rf \
+    /config/.cache \
+    /tmp/*
+
+# Flatten: removing packages above only shrinks the image once the base image's layers, which
+# still hold every removed file, are gone.
+FROM scratch
+COPY --from=build / /
+
+# Runtime config of the build stage, restated because FROM scratch starts empty. smoke_test.sh
+# fails the build when this drifts from the build stage (e.g. upstream adds a variable).
+ENV PATH="/lsiopy/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+    PS1="$(whoami)@$(hostname):$(pwd)\\$ " \
+    HOME="/config" \
+    TERM="xterm" \
+    S6_CMD_WAIT_FOR_SERVICES_MAXTIME="0" \
+    S6_VERBOSITY="1" \
+    S6_STAGE2_HOOK="/docker-mods" \
+    VIRTUAL_ENV="/lsiopy" \
+    DISPLAY=":1" \
+    PERL5LIB="/usr/local/bin" \
+    START_DOCKER="true" \
+    PULSE_RUNTIME_PATH="/defaults" \
+    SELKIES_INTERPOSER="/usr/lib/selkies_input_interposer.so" \
+    SELKIES_WEBCAM_INTERPOSER="/usr/lib/selkies_v4l2_interposer.so" \
+    NVIDIA_DRIVER_CAPABILITIES="all" \
+    DISABLE_DRI3="false" \
+    LC_ALL="en_US.UTF-8" \
+    SELKIES_ENCODER="h264enc,h265enc,vp8enc,vp9enc,av1enc,jpeg" \
+    SELKIES_ENABLE_BASIC_AUTH="false" \
+    SELKIES_VIDEO_STREAMING_MODE="false" \
+    SELKIES_ALLOWED_ORIGINS="*" \
+    SELKIES_RATE_CONTROL_MODE="crf,cbr" \
+    SHELL="/bin/bash" \
+    __GL_SYNC_TO_VBLANK="0" \
+    TITLE="Fedora KDE" \
+    PIXELFLUX_WAYLAND="true"
+EXPOSE 3000 3001
+VOLUME /config
+ENTRYPOINT ["/init"]

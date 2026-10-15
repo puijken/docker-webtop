@@ -1,0 +1,14 @@
+#! /bin/bash
+
+BIN=/usr/share/code/code
+
+# Wayland check
+if [ "${PIXELFLUX_WAYLAND,,}" == "true" ]; then
+  WAYLAND="--ozone-platform=wayland"
+fi
+
+${BIN} \
+  --password-store=basic \
+  --no-sandbox \
+  ${WAYLAND} \
+  "$@"

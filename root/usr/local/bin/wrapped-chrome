@@ -1,0 +1,26 @@
+#! /bin/bash
+
+BIN=/usr/bin/google-chrome-stable
+
+# Cleanup
+if ! pgrep -f /opt/google/chrome/chrome > /dev/null;then
+  rm -f $HOME/.config/google-chrome/Singleton*
+fi
+
+# Wayland check
+if [ "${PIXELFLUX_WAYLAND,,}" == "true" ]; then
+  WAYLAND="--ozone-platform=wayland"
+fi
+
+# Pelorus accessibility
+if [ "${PELORUS,,}" == "true" ]; then
+  ACCESSIBILITY="--force-renderer-accessibility"
+fi
+
+${BIN} \
+  --password-store=basic \
+  --no-sandbox \
+  --test-type \
+  ${WAYLAND} \
+  ${ACCESSIBILITY} \
+  "$@"

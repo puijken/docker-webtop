@@ -1,0 +1,26 @@
+#! /bin/bash
+
+BIN=/usr/bin/microsoft-edge-stable
+
+# Cleanup
+if ! pgrep -f /opt/microsoft/msedge/msedge > /dev/null;then
+  rm -f $HOME/.config/microsoft-edge/Singleton*
+fi
+
+# Wayland check
+if [ "${PIXELFLUX_WAYLAND,,}" == "true" ]; then
+  WAYLAND="--ozone-platform=wayland"
+fi
+
+# Pelorus accessibility
+if [ "${PELORUS,,}" == "true" ]; then
+  ACCESSIBILITY="--force-renderer-accessibility"
+fi
+
+${BIN} \
+  --password-store=basic \
+  --no-sandbox \
+  --test-type \
+  ${WAYLAND} \
+  ${ACCESSIBILITY} \
+  "$@"
