@@ -10,8 +10,8 @@ README can merge without conflicts.
 
 ## Changes from upstream
 
-All of the fork's own build steps are in one block at the end of the `Dockerfile`. Upstream's
-part only loses a few package lines.
+All of the fork's own build steps are in one block **appended** to upstream's `Dockerfile`, with
+no upstream line changed. Upstream merges therefore don't conflict in the `Dockerfile`.
 
 Added:
 
@@ -27,8 +27,9 @@ Added:
 Fedora's own ffmpeg (`*-free`) has no H.264/HEVC. `ffmpeg-libs` from RPM Fusion replaces it;
 the base image already enables RPM Fusion and ships the Intel/Mesa VA-API drivers.
 
-Removed from upstream's list: `chromium`, `kwrite`, `papirus-icon-theme`, `plasma-discover`,
-`plasma-discover-packagekit`.
+Removed again after upstream installs them: `chromium`, `kwrite`, `papirus-icon-theme`,
+`plasma-discover`, `plasma-discover-packagekit`. `dnf remove` skips packages that aren't
+installed, so the list can't break when upstream drops one.
 
 Removed from the base, because a desktop never uses them:
 - the Docker engine (`moby-engine`, `containerd`, `runc`, CLI, compose). It only starts in a
@@ -37,11 +38,15 @@ Removed from the base, because a desktop never uses them:
 - `glibc-all-langpacks` (replaced by `en` + `nl`);
 - translations other than en/nl, the browsers' other language packs, and `/usr/share/doc`.
 
-**Flattened.** The final stage is `FROM scratch` + `COPY --from=build / /`. Without it, removed
-files would still be in the base image's layers. The runtime config (`ENV`, `ENTRYPOINT`,
-`EXPOSE`, `VOLUME`) is restated by hand. `smoke_test.sh` compares it with the unflattened
-`build` stage and fails on any drift. When it fails after an upstream merge, copy the new values
-into the `ENV` block.
+The base's `python3-*` and `perl-*` packages are marked as user-installed first, so the removal
+can't take them as "unused dependencies". Selkies' venv uses system site-packages, which rpm
+can't see. Dropping `python3-cffi` once took the stream down. The smoke test imports Selkies to
+catch this.
+
+**Flattened.** `flatten.sh LAYERED TARGET` turns the built image into one layer (`FROM scratch` +
+`COPY --from`). Without that, removed files would still be in the base image's layers. It copies
+the runtime config (`ENV`, `ENTRYPOINT`, `EXPOSE`, `VOLUME`, ...) from the layered image
+mechanically, so upstream config changes flow through. The smoke test checks that the two match.
 
 Chrome, Edge and VS Code start through `/usr/local/bin/wrapped-{chrome,edge,code}`. The wrappers
 add `--no-sandbox` (the Chromium sandbox can't work in an unprivileged container, same as
@@ -54,24 +59,33 @@ purpose, so merges stay clean. They are inert here. Only amd64 is built.
 
 ## Pulling in upstream
 
-```sh
-git fetch upstream
-git merge upstream/fedora-kde
-git push            # triggers the build
-```
+This is automatic. The weekly CI run executes `sync-upstream.sh` before building:
+1. It merges `upstream/fedora-kde`.
+2. It deletes linuxserver's workflows again, whether upstream changed one (conflict) or added a
+   new one.
+3. CI builds, flattens and smoke-tests the result.
 
-Conflicts can only happen in the `Dockerfile` (upstream's package list) or in a removed workflow.
-For a workflow, resolve with `git rm`. When linuxserver moves to a new Fedora release, the base
-tag in `FROM` changes with the merge. Check that the fork block's packages still exist there.
+Only if all of that passes does CI push both the merge commit and `:latest`. Otherwise `main` and
+`:latest` stay on the last good state, and the failed run sends an email.
+
+What can still need a hand:
+- A real conflict, which means upstream appended to the very end of the `Dockerfile`. It's rare.
+  Run `./sync-upstream.sh` locally, resolve, push.
+- A new Fedora release (every ~6 months) renaming a package the fork block installs. The build
+  fails, so fix the name.
+
+To sync by hand, run `./sync-upstream.sh` then `git push`.
 
 ## CI
 
-`build.yml` builds on a push to `main`, on manual dispatch, and **weekly**. The weekly run keeps
-the browsers and VS Code current, since they only update when the image is rebuilt. Before
-pushing `:latest`, it runs `smoke_test.sh IMAGE BUILD_STAGE_IMAGE`, which checks:
+`build.yml` builds on a push to `main`, on manual dispatch, and **weekly**. The weekly and manual
+runs merge upstream first. The weekly run also keeps the browsers and VS Code current, since they
+only update when the image is rebuilt. Each run builds, then runs `flatten.sh`, then
+`smoke_test.sh IMAGE LAYERED_IMAGE` before pushing `:latest`. The smoke test checks:
 - the apps are present and every launcher goes through a wrapper;
 - the trimmed packages are gone, and the RPM Fusion ffmpeg is installed;
 - the locale and file capabilities are intact;
-- the runtime config matches the build stage.
+- Selkies imports;
+- the runtime config matches the layered image.
 
 `pr-validate.yml` runs the same on pull requests.

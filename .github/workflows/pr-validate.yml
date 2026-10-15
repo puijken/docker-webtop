@@ -20,15 +20,10 @@ jobs:
         with:
           context: .
           push: false
-          tags: docker-webtop:pr
+          tags: docker-webtop:layered
 
-      - name: Build unflattened stage
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: false
-          target: build
-          tags: docker-webtop:build
+      - name: Flatten
+        run: ./flatten.sh docker-webtop:layered docker-webtop:pr
 
       - name: Smoke test
-        run: ./smoke_test.sh docker-webtop:pr docker-webtop:build
+        run: ./smoke_test.sh docker-webtop:pr docker-webtop:layered

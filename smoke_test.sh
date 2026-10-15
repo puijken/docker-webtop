@@ -1,12 +1,12 @@
 #!/bin/bash
 # Checks on a built image: the added apps are installed, their launchers go through the
-# --no-sandbox wrappers, the trimmed packages are gone, and the flattened image kept the build
-# stage's runtime config. Usage: smoke_test.sh IMAGE BUILD_STAGE_IMAGE
+# --no-sandbox wrappers, the trimmed packages are gone, and the flattened image kept the layered
+# image's runtime config. Usage: smoke_test.sh IMAGE LAYERED_IMAGE
 set -euo pipefail
 
 cfg='{{json .Config.Env}} {{json .Config.Entrypoint}} {{json .Config.Cmd}} {{.Config.WorkingDir}} {{json .Config.ExposedPorts}} {{json .Config.Volumes}} {{.Config.User}}'
 if [ "$(docker inspect -f "$cfg" "$1")" != "$(docker inspect -f "$cfg" "$2")" ]; then
-  echo "runtime config differs from the build stage; update the ENV block in the Dockerfile:"
+  echo "runtime config differs from the layered image (flatten.sh bug?):"
   diff <(docker inspect -f "$cfg" "$2" | tr ' ,' '\n\n') <(docker inspect -f "$cfg" "$1" | tr ' ,' '\n\n') || true
   exit 1
 fi
@@ -23,7 +23,7 @@ docker run --rm --entrypoint /bin/bash "$1" -c '
   grep -q wrapped-chrome /usr/share/applications/google-chrome.desktop
   grep -q wrapped-edge /usr/share/applications/microsoft-edge.desktop
   grep -q wrapped-code /usr/share/applications/com.microsoft.VSCode.desktop
-  for bin in cargo gcc dockerd containerd cmake; do
+  for bin in cargo gcc dockerd containerd cmake chromium-browser plasma-discover; do
     if command -v "$bin" > /dev/null; then echo "still installed: $bin"; exit 1; fi
   done
   rpm -q ffmpeg-libs > /dev/null || { echo "RPM Fusion ffmpeg-libs missing (mkv/HEVC)"; exit 1; }

@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
   # Weekly, unlike the monthly run of the other container repos: Chrome, Edge and VS Code are
   # baked into the image and only update when it is rebuilt, and browsers ship security fixes
-  # about weekly. The run also refreshes the base image, which is pinned by tag (Dependabot
-  # can't see same-tag rebuilds). No `no-cache` is needed -- there is no layer cache configured
-  # and `pull: true` below re-resolves the tag, so every build is already fully fresh.
+  # about weekly. The scheduled run also merges linuxserver's fedora-kde branch first, and the
+  # base image is re-pulled every time (`pull: true`, no layer cache).
   schedule:
     - cron: '0 1 * * 1'  # 01:00 UTC every Monday
 
@@ -17,14 +16,26 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write  # push the upstream merge
       packages: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
-      # The image is ~4 GB; the stock runner is tight on disk for that.
+      # Only on the schedule or a manual run. A push build builds what was pushed. The merge is
+      # pushed back only after the image built and passed the smoke test, so a bad upstream change
+      # leaves both main and :latest on the last good state, and the failed run emails the owner.
+      - name: Merge upstream
+        if: github.event_name != 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
+          ./sync-upstream.sh
+
+      # The image is ~5 GB and is built twice (layered, then flattened).
       - name: Free disk space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
 
@@ -35,28 +46,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # No Buildx setup: the default docker driver builds straight into the local daemon, so the
-      # smoke test can run the image without a second ~4 GB copy from `load: true`.
-      # Smoke-tested before publishing, so a broken build never reaches :latest.
+      # No Buildx setup: the default docker driver builds straight into the local daemon, where
+      # flatten.sh and the smoke test can use the image without a `load: true` copy.
       - name: Build Docker image
         uses: docker/build-push-action@v7
         with:
           context: .
           push: false
           pull: true
-          tags: ghcr.io/${{ github.repository }}:latest
+          tags: docker-webtop:layered
 
-      # The build stage before flattening, only to compare runtime config against (cached).
-      - name: Build unflattened stage
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          push: false
-          target: build
-          tags: docker-webtop:build
+      - name: Flatten
+        run: ./flatten.sh docker-webtop:layered ghcr.io/${{ github.repository }}:latest
 
       - name: Smoke test
-        run: ./smoke_test.sh ghcr.io/${{ github.repository }}:latest docker-webtop:build
+        run: ./smoke_test.sh ghcr.io/${{ github.repository }}:latest docker-webtop:layered
 
       - name: Push Docker image
         run: docker push ghcr.io/${{ github.repository }}:latest
+
+      - name: Push upstream merge
+        if: github.event_name != 'push'
+        run: git push origin HEAD:main
