@@ -24,6 +24,9 @@ Added:
 | qimgv (image viewer) | `qimgv` | Fedora |
 | mpv (video player) | `mpv` + `ffmpeg-libs` | Fedora + RPM Fusion |
 
+mpv decodes on the iGPU through `/etc/mpv/mpv.conf` (`hwdec=auto-safe`). Fedora's mpv has
+hardware decoding off by default.
+
 Fedora's own ffmpeg (`*-free`) has no H.264/HEVC. `ffmpeg-libs` from RPM Fusion replaces it;
 the base image already enables RPM Fusion and ships the Intel/Mesa VA-API drivers.
 

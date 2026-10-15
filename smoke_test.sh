@@ -29,6 +29,7 @@ docker run --rm --entrypoint /bin/bash "$1" -c '
     if command -v "$bin" > /dev/null; then echo "still installed: $bin"; exit 1; fi
   done
   if rpm -q libva-intel-driver > /dev/null; then echo "i965 driver back: init-video would force it over iHD"; exit 1; fi
+  grep -q "^hwdec=" /etc/mpv/mpv.conf || { echo "mpv hardware decoding not configured"; exit 1; }
   rpm -q ffmpeg-libs > /dev/null || { echo "RPM Fusion ffmpeg-libs missing (mkv/HEVC)"; exit 1; }
   locale -a | grep -qi en_US.utf8 || { echo "en_US.UTF-8 locale missing"; exit 1; }
   getcap /usr/libexec/gstreamer-1.0/gst-ptp-helper | grep -q cap_net_bind_service \
