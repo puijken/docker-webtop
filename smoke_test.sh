@@ -14,7 +14,7 @@ fi
 docker run --rm --entrypoint /bin/bash "$1" -c '
   set -euo pipefail
   # ss: an on-demand watchdog checks connections with it; without it, idle detection breaks.
-  for bin in code google-chrome-stable microsoft-edge-stable qimgv mpv doublecmd-qt6 \
+  for bin in code google-chrome-stable microsoft-edge-stable qimgv mpv \
              wl-copy wrapped-chrome wrapped-edge wrapped-code kwin_wayland plasmashell \
              ss; do
     command -v "$bin" > /dev/null || { echo "missing: $bin"; exit 1; }

@@ -20,7 +20,6 @@ Added:
 | VS Code | `code` | packages.microsoft.com |
 | Microsoft Edge | `microsoft-edge-stable` | packages.microsoft.com |
 | Google Chrome | `google-chrome-stable` | dl.google.com |
-| Double Commander (Qt6) | `doublecmd-qt6` | Fedora |
 | qimgv (image viewer) | `qimgv` | Fedora |
 | mpv (video player) | `mpv` + `ffmpeg-libs` | Fedora + RPM Fusion |
 

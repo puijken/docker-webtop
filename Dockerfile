@@ -104,7 +104,6 @@ RUN \
   echo "**** fork: apps (ffmpeg-libs from RPM Fusion: Fedora's own ffmpeg lacks H.264/HEVC) ****" && \
   dnf install -y --setopt=install_weak_deps=False --best --allowerasing \
     code \
-    doublecmd-qt6 \
     ffmpeg-libs \
     google-chrome-stable \
     microsoft-edge-stable \
