@@ -55,10 +55,37 @@ catch this.
 the runtime config (`ENV`, `ENTRYPOINT`, `EXPOSE`, `VOLUME`, ...) from the layered image
 mechanically, so upstream config changes flow through. The smoke test checks that the two match.
 
-Chrome, Edge and VS Code start through `/usr/local/bin/wrapped-{chrome,edge,code}`. The wrappers
-add `--no-sandbox` (the Chromium sandbox can't work in an unprivileged container, same as
-upstream's `wrapped-chromium`) and the Wayland flag. Every `.desktop` file pointing at the real
-binaries is rewritten to use them.
+Chrome, Edge and VS Code start through `/usr/local/bin/wrapped-{chrome,edge,code}`, which add
+the Wayland flag and decide about the sandbox (next section). Every `.desktop` file pointing at
+the real binaries is rewritten to use them.
+
+## Browser sandbox
+
+Chromium's sandbox needs unprivileged user namespaces. Docker's default seccomp profile denies
+them, so upstream's wrappers pass `--no-sandbox`, and by default so do this fork's. Then nothing
+stands between a malicious page and the rest of the desktop.
+
+The fork's wrappers check at every start whether the container may create user namespaces
+(`unshare --user --pid --net --fork true`). If it may, they leave `--no-sandbox` out and Chrome,
+Edge and VS Code run sandboxed. To allow it, start the container with a seccomp profile that is
+Docker's default plus one rule (allow `clone`, `unshare` and `setns` without `CAP_SYS_ADMIN`):
+
+```bash
+./seccomp-profile.sh > seccomp-userns.json          # for this host's Docker version
+```
+
+```yaml
+    security_opt:
+      - seccomp=./seccomp-userns.json
+```
+
+The trade-off: every process in the container can then create user namespaces, which exposes
+more of the kernel to it. Regenerate the profile after a Docker upgrade, since it is a copy of
+that version's default. Without the profile the image behaves as before.
+
+Tested with the profile: all three start without `--no-sandbox`, and their renderers run in
+their own PID namespace. CI only covers the fallback, because its runner uses the default
+profile.
 
 linuxserver's GitHub workflows are removed, because they would run unguarded here. `Jenkinsfile`,
 `package_versions.txt`, `wrapped-chromium` and the rest of `.github` are left untouched on
@@ -97,13 +124,15 @@ only update when the image is rebuilt. Each run builds, then runs `flatten.sh`, 
 - the runtime config matches the layered image;
 - **the desktop starts.** The image is run without a GPU (software rendering, which is all a CI
   runner has). `kwin_wayland`, `plasmashell` and the web port must be up within 90 s and still up
-  15 s later. The other checks only prove files exist; this one catches an upstream change to the
-  start scripts that would leave a black screen.
+  15 s later, and Chrome and Edge must start through their wrappers. The other checks only prove
+  files exist; this one catches an upstream change to the start scripts that would leave a black
+  screen.
 
 Runs don't overlap (`concurrency`), so a push build and the weekly run can't publish out of
 order.
 
 **Rolling back:** point the container at a dated tag from before the bad build, for example
-`ghcr.io/puijken/docker-webtop:2026-01-05`. Dated tags are not pruned automatically.
+`ghcr.io/puijken/docker-webtop:2026-01-05`. The last step of each run (`prune-images.sh`) keeps
+the newest three builds on ghcr.io and deletes older versions, including untagged ones.
 
 `pr-validate.yml` runs the same on pull requests.

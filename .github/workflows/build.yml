@@ -82,3 +82,10 @@ jobs:
       - name: Push upstream merge
         if: github.event_name != 'push'
         run: git push origin HEAD:main
+
+      # Last, so a failure here can't hold back the image or the merge: keep the newest three
+      # builds on ghcr.io (the current one and two to roll back to) and delete the rest.
+      - name: Prune old image versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./prune-images.sh "${{ github.repository_owner }}" "${GITHUB_REPOSITORY#*/}" 3

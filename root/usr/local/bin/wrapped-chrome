@@ -17,10 +17,18 @@ if [ "${PELORUS,,}" == "true" ]; then
   ACCESSIBILITY="--force-renderer-accessibility"
 fi
 
+# Sandbox: Chromium's own sandbox needs user namespaces, which Docker's default seccomp profile
+# denies. Use it when this container may create them (see FORK.md), otherwise run without it,
+# as upstream's wrappers do.
+if unshare --user --pid --net --fork true 2> /dev/null; then
+  SANDBOX=""
+else
+  SANDBOX="--no-sandbox --test-type"
+fi
+
 ${BIN} \
   --password-store=basic \
-  --no-sandbox \
-  --test-type \
+  ${SANDBOX} \
   ${WAYLAND} \
   ${ACCESSIBILITY} \
   "$@"

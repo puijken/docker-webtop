@@ -1,6 +1,6 @@
 #!/bin/bash
 # Checks on a built image: the added apps are installed, their launchers go through the
-# --no-sandbox wrappers, the trimmed packages are gone, the flattened image kept the layered
+# wrappers, the trimmed packages are gone, the flattened image kept the layered
 # image's runtime config, and the desktop actually starts. Usage: smoke_test.sh IMAGE LAYERED_IMAGE
 set -euo pipefail
 
@@ -14,9 +14,10 @@ fi
 docker run --rm --entrypoint /bin/bash "$1" -c '
   set -euo pipefail
   # ss: an on-demand watchdog checks connections with it; without it, idle detection breaks.
+  # unshare: the wrappers probe with it whether the browser sandbox can be used.
   for bin in code google-chrome-stable microsoft-edge-stable qimgv mpv \
              wl-copy wrapped-chrome wrapped-edge wrapped-code kwin_wayland plasmashell \
-             ss; do
+             ss unshare; do
     command -v "$bin" > /dev/null || { echo "missing: $bin"; exit 1; }
   done
   if grep -l -E "/usr/bin/(google-chrome|microsoft-edge)-stable|/usr/share/code/code" /usr/share/applications/*.desktop; then
@@ -67,6 +68,14 @@ for _ in $(seq 1 45); do
   sleep 2
 done
 [ -n "$booted" ] || boot_failed "no desktop (kwin_wayland, plasmashell, HTTP 200 on :3001) within 90 s"
+
+# The browsers start through their wrappers. Under Docker's default seccomp profile, which is
+# what this test runs with, that is the wrappers' --no-sandbox fallback.
+for b in chrome edge; do
+  docker exec -u abc -e HOME=/config "$name" timeout 60 "/usr/local/bin/wrapped-$b" \
+    --headless=new --disable-gpu --user-data-dir="/tmp/smoke-$b" --dump-dom about:blank 2> /dev/null \
+    | grep -q '<html' || boot_failed "wrapped-$b did not start"
+done
 
 # Still there a little later: catches a compositor or shell that starts and then crash-loops.
 sleep 15
