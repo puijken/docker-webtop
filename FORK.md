@@ -2,7 +2,8 @@
 
 A trimmed, flattened [linuxserver/docker-webtop](https://github.com/linuxserver/docker-webtop)
 **`fedora-kde`** image with a small set of apps baked in. It is KDE Plasma on Wayland
-(`kwin_wayland`), so desktop effects work. Published as `ghcr.io/puijken/docker-webtop:latest`.
+(`kwin_wayland`), so desktop effects work. Published as `ghcr.io/puijken/docker-webtop:latest`,
+and each build also under a dated tag (`:YYYY-MM-DD`, UTC) to roll back to.
 Everything in upstream's README still applies: same env vars, same `/config`, same ports.
 
 `main` tracks upstream's `fedora-kde` branch. This file holds the fork's notes so upstream's
@@ -71,8 +72,9 @@ This is automatic. The weekly CI run executes `sync-upstream.sh` before building
    new one.
 3. CI builds, flattens and smoke-tests the result.
 
-Only if all of that passes does CI push both the merge commit and `:latest`. Otherwise `main` and
-`:latest` stay on the last good state, and the failed run sends an email.
+Only if all of that passes does CI push both the merge commit and the image (`:latest` and the
+dated tag). Otherwise `main` and `:latest` stay on the last good state, and the failed run sends
+an email.
 
 What can still need a hand:
 - A real conflict, which means upstream appended to the very end of the `Dockerfile`. It's rare.
@@ -92,6 +94,16 @@ only update when the image is rebuilt. Each run builds, then runs `flatten.sh`, 
 - the trimmed packages are gone, and the RPM Fusion ffmpeg is installed;
 - the locale and file capabilities are intact;
 - Selkies imports;
-- the runtime config matches the layered image.
+- the runtime config matches the layered image;
+- **the desktop starts.** The image is run without a GPU (software rendering, which is all a CI
+  runner has). `kwin_wayland`, `plasmashell` and the web port must be up within 90 s and still up
+  15 s later. The other checks only prove files exist; this one catches an upstream change to the
+  start scripts that would leave a black screen.
+
+Runs don't overlap (`concurrency`), so a push build and the weekly run can't publish out of
+order.
+
+**Rolling back:** point the container at a dated tag from before the bad build, for example
+`ghcr.io/puijken/docker-webtop:2026-01-05`. Dated tags are not pruned automatically.
 
 `pr-validate.yml` runs the same on pull requests.

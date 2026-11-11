@@ -1,7 +1,7 @@
 #!/bin/bash
 # Checks on a built image: the added apps are installed, their launchers go through the
-# --no-sandbox wrappers, the trimmed packages are gone, and the flattened image kept the layered
-# image's runtime config. Usage: smoke_test.sh IMAGE LAYERED_IMAGE
+# --no-sandbox wrappers, the trimmed packages are gone, the flattened image kept the layered
+# image's runtime config, and the desktop actually starts. Usage: smoke_test.sh IMAGE LAYERED_IMAGE
 set -euo pipefail
 
 cfg='{{json .Config.Env}} {{json .Config.Entrypoint}} {{json .Config.Cmd}} {{.Config.WorkingDir}} {{json .Config.ExposedPorts}} {{json .Config.Volumes}} {{.Config.User}}'
@@ -37,5 +37,39 @@ docker run --rm --entrypoint /bin/bash "$1" -c '
   # selkies streams the desktop; its venv leans on system python packages a trim can remove.
   /lsiopy/bin/python3 -c "import selkies.__main__" \
     || { echo "selkies does not import"; exit 1; }
-  echo "smoke test OK"
+  echo "static checks OK"
 '
+
+# Boot test: start the image the way a user would and wait for the desktop. The checks above only
+# prove that files exist; an upstream change to the start scripts would pass them and still leave
+# a black screen. No GPU is passed in, so this runs the software-rendering path, which is also
+# what a CI runner has.
+name="webtop-smoke-$$"
+docker run -d --rm --name "$name" --shm-size=1g "$1" > /dev/null
+trap 'docker rm -f "$name" > /dev/null 2>&1 || true' EXIT
+
+desktop_up() {
+  docker exec "$name" bash -c '
+    pgrep -x kwin_wayland > /dev/null && pgrep -x plasmashell > /dev/null &&
+    [ "$(curl -sk -o /dev/null -w "%{http_code}" --max-time 3 https://localhost:3001/)" = 200 ]
+  ' 2> /dev/null
+}
+
+boot_failed() {
+  echo "boot test: $1"
+  docker logs --tail 60 "$name" 2>&1 || true
+  exit 1
+}
+
+booted=""
+for _ in $(seq 1 45); do
+  if desktop_up; then booted=1; break; fi
+  sleep 2
+done
+[ -n "$booted" ] || boot_failed "no desktop (kwin_wayland, plasmashell, HTTP 200 on :3001) within 90 s"
+
+# Still there a little later: catches a compositor or shell that starts and then crash-loops.
+sleep 15
+desktop_up || boot_failed "the desktop came up but did not stay up for 15 s"
+
+echo "smoke test OK"

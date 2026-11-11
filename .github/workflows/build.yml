@@ -12,6 +12,12 @@ on:
   schedule:
     - cron: '0 1 * * 1'  # 01:00 UTC every Monday
 
+# One run at a time. A push build and the weekly run could otherwise overlap and publish
+# :latest in the wrong order. A second run waits for the first instead of cancelling it.
+concurrency:
+  group: build
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -62,8 +68,16 @@ jobs:
       - name: Smoke test
         run: ./smoke_test.sh ghcr.io/${{ github.repository }}:latest docker-webtop:layered
 
+      # :latest plus a dated tag (UTC build day), so there is a known-good image to go back to
+      # by name if a later build turns out bad. A second build on the same day replaces that
+      # day's tag.
       - name: Push Docker image
-        run: docker push ghcr.io/${{ github.repository }}:latest
+        run: |
+          image=ghcr.io/${{ github.repository }}
+          dated="$image:$(date -u +%Y-%m-%d)"
+          docker tag "$image:latest" "$dated"
+          docker push "$image:latest"
+          docker push "$dated"
 
       - name: Push upstream merge
         if: github.event_name != 'push'
